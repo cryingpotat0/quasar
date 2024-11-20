@@ -33,8 +33,14 @@ struct Args {
 // Struct to hold our application state
 struct AppState {
     channels: RwLock<HashMap<u32, String>>,
-    connections: RwLock<HashMap<String, ConnectionState>>,
+    active_channels: RwLock<HashMap<String, ChannelState>>,
     word_list: Vec<&'static str>,
+}
+
+struct ChannelState {
+    initiator: Option<ConnectionState>,
+    responder: Option<ConnectionState>,
+    created_at: std::time::Instant,
 }
 
 struct ConnectionState {
@@ -50,6 +56,28 @@ impl ConnectionState {
             last_message: std::time::Instant::now(),
             ready: false,
         }
+    }
+}
+
+impl ChannelState {
+    fn new(initial_connection: ConnectionState) -> Self {
+        Self {
+            initiator: Some(initial_connection),
+            responder: None,
+            created_at: std::time::Instant::now(),
+        }
+    }
+
+    fn is_full(&self) -> bool {
+        self.initiator.is_some() && self.responder.is_some()
+    }
+
+    fn add_responder(&mut self, connection: ConnectionState) -> Result<(), &'static str> {
+        if self.responder.is_some() {
+            return Err("Channel already has a responder");
+        }
+        self.responder = Some(connection);
+        Ok(())
     }
 }
 
