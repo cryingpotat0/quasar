@@ -48,8 +48,8 @@ struct PendingChannel {
 }
 
 struct ChannelState {
-    initiator: ConnectionState,
-    responder: ConnectionState,
+    initiator: Option<ConnectionState>,
+    responder: Option<ConnectionState>,
     created_at: std::time::Instant,
 }
 
@@ -250,54 +250,46 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
 
 async fn handle_message(
     msg: Message,
-    channel_code: &str,
+    channel_uuid: &Uuid,
     state: &Arc<AppState>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let text = msg.to_str().map_err(|_| "Invalid message format")?;
     let client_msg: ClientMessage = serde_json::from_str(text)?;
 
-    // Update last message timestamp
-    if let Some(conn) = state.connections.write().await.get_mut(channel_code) {
-        conn.last_message = std::time::Instant::now();
-    }
+    let mut active_channels = state.active_channels.write().await;
+    let channel = active_channels
+        .get_mut(channel_uuid)
+        .ok_or("Channel not found")?;
+
+    // Update last message timestamp for the sender
+    let (sender_conn, receiver_conn) = {
+        let (init, resp) = (channel.initiator.as_mut(), channel.responder.as_mut());
+        match (init, resp) {
+            (Some(i), Some(r)) => (i, r),
+            _ => return Err("Incomplete channel state".into()),
+        }
+    };
+    
+    sender_conn.last_message = std::time::Instant::now();
 
     match client_msg {
         ClientMessage::Data { content } => {
-            let connections = state.connections.read().await;
-            let current_conn = connections
-                .get(channel_code)
-                .ok_or("Connection not found")?;
-
             // Check if both sides are ready
-            if !current_conn.ready {
-                send_error_and_close_all(
-                    &connections,
-                    channel_code,
-                    "Data sent before connection ready",
-                )
-                .await;
+            if !sender_conn.ready || !receiver_conn.ready {
+                send_error_and_close(sender_conn, "Data sent before connection ready").await;
+                send_error_and_close(receiver_conn, "Data sent before connection ready").await;
                 return Ok(());
             }
 
-            // Forward data to the other connection
-            for (other_code, other_conn) in connections.iter() {
-                if other_code != channel_code && other_conn.ready {
-                    let msg = ServerMessage::Data { content: content.clone() };
-                    send_message(&other_conn.sender, &msg)?;
-                }
-            }
+            // Forward data to the receiver
+            let msg = ServerMessage::Data { content };
+            send_message(&receiver_conn.sender, &msg)?;
         }
         ClientMessage::ConnectAck => {
-            if let Some(conn) = state.connections.write().await.get_mut(channel_code) {
-                conn.ready = true;
-            }
+            sender_conn.ready = true;
         }
         _ => {
-            send_error_and_close(
-                state.connections.read().await.get(channel_code).unwrap(),
-                "Invalid message type for established connection",
-            )
-            .await;
+            send_error_and_close(sender_conn, "Invalid message type for established connection").await;
         }
     }
     Ok(())
@@ -419,18 +411,42 @@ async fn cleanup_connection(state: &Arc<AppState>, channel_uuid: &Uuid) {
 }
 
 async fn reap_stale_connections(state: &Arc<AppState>) {
-    let mut to_remove = Vec::new();
-    let connections = state.connections.read().await;
+    // Clean up pending channels
+    {
+        let mut pending = state.pending_channels.write().await;
+        let stale_pending: Vec<_> = pending
+            .iter()
+            .filter(|(_, channel)| channel.created_at.elapsed() > Duration::from_secs(60))
+            .map(|(id, _)| *id)
+            .collect();
 
-    for (code, conn) in connections.iter() {
-        if conn.last_message.elapsed() > Duration::from_secs(60) {
-            to_remove.push(code.clone());
+        for id in stale_pending {
+            warn!("Reaping stale pending channel: {}", id);
+            if let Some(channel) = pending.remove(&id) {
+                let msg = ServerMessage::Error {
+                    message: "Channel timed out".to_string(),
+                };
+                if let Err(e) = send_message(&channel.initiator.sender, &msg) {
+                    error!("Failed to send timeout message: {}", e);
+                }
+            }
         }
     }
-    drop(connections);
 
-    for code in to_remove {
-        warn!("Reaping stale connection: {}", code);
-        cleanup_connection(state, &code).await;
+    // Clean up active channels
+    let mut active = state.active_channels.write().await;
+    let stale_active: Vec<_> = active
+        .iter()
+        .filter(|(_, channel)| {
+            channel.created_at.elapsed() > Duration::from_secs(300) || // 5 minute total lifetime
+            channel.initiator.as_ref().map_or(true, |c| c.last_message.elapsed() > Duration::from_secs(60)) ||
+            channel.responder.as_ref().map_or(true, |c| c.last_message.elapsed() > Duration::from_secs(60))
+        })
+        .map(|(uuid, _)| *uuid)
+        .collect();
+
+    for uuid in stale_active {
+        warn!("Reaping stale active channel: {}", uuid);
+        cleanup_connection(state, &uuid).await;
     }
 }
