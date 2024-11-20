@@ -150,10 +150,7 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
         if let Err(e) = receiver.forward(ws_sender).await {
             error!("Error sending websocket message: {}", e);
         }
-        if let Err(e) = result {
-            error!("Error sending websocket message: {}", e);
-        }
-    }));
+    });
 
     let connection = ConnectionState::new(sender.clone());
 
