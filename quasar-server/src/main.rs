@@ -144,16 +144,16 @@ fn with_state(
 
 async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
     let (ws_sender, mut ws_receiver) = ws.split();
-
     let (sender, receiver) = mpsc::unbounded_channel::<Result<Message, warp::Error>>();
     let receiver = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
 
-    // Handle incoming messages
     tokio::task::spawn(receiver.forward(ws_sender).map(|result| {
         if let Err(e) = result {
             error!("Error sending websocket message: {}", e);
         }
     }));
+
+    let connection = ConnectionState::new(sender.clone());
 
     // Wait for initial message with timeout
     let initial_msg = match timeout(Duration::from_secs(5), ws_receiver.next()).await {
@@ -185,25 +185,20 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
     let initial_message: ClientMessage = match serde_json::from_str(initial_text) {
         Ok(msg) => msg,
         Err(_) => {
-            let temp_conn = ConnectionState::new(sender.clone());
-            send_error_and_close(&temp_conn, "Invalid message format").await;
+            send_error_and_close(&connection, "Invalid message format").await;
             return;
         }
     };
 
-    let channel_code = match initial_message {
-        ClientMessage::NewChannel => generate_channel_code(&state).await,
-        ClientMessage::Connect { ref code } => {
-            if !validate_channel_code(code, &state).await {
-                let temp_conn = ConnectionState::new(sender.clone());
-                send_error_and_close(&temp_conn, "Invalid channel code").await;
-                return;
-            }
-            code.to_string()
+    match initial_message {
+        ClientMessage::NewChannel => {
+            handle_new_channel(&state, connection).await;
+        }
+        ClientMessage::Connect { code } => {
+            handle_connect(&state, connection, &code).await;
         }
         _ => {
-            let temp_conn = ConnectionState::new(sender.clone());
-            send_error_and_close(&temp_conn, "Invalid initial message type").await;
+            send_error_and_close(&connection, "Invalid initial message type").await;
             return;
         }
     };
