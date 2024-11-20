@@ -161,7 +161,7 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
                 send_error_and_close(&temp_conn, "Invalid channel code").await;
                 return;
             }
-            code
+            code.to_string()
         }
         _ => {
             let temp_conn = ConnectionState::new(sender.clone());
@@ -252,7 +252,7 @@ async fn handle_message(
 
     match client_msg {
         ClientMessage::Data { content } => {
-            let mut connections = state.connections.read().await;
+            let connections = state.connections.read().await;
             let current_conn = connections
                 .get(channel_code)
                 .ok_or("Connection not found")?;
@@ -271,7 +271,7 @@ async fn handle_message(
             // Forward data to the other connection
             for (other_code, other_conn) in connections.iter() {
                 if other_code != channel_code && other_conn.ready {
-                    let msg = ServerMessage::Data { content };
+                    let msg = ServerMessage::Data { content: content.clone() };
                     send_message(&other_conn.sender, &msg)?;
                 }
             }
