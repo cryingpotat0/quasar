@@ -1,0 +1,7 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/quasar-client" },
+    { "path": "packages/quasar-chat" }
+  ]
+}

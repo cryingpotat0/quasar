@@ -1,0 +1,7 @@
+{
+  "name": "quasar-applications",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ]
+}
