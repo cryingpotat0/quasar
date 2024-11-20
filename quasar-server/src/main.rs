@@ -34,9 +34,7 @@ struct Args {
 use uuid::Uuid;
 
 struct AppState {
-    // Maps channel ID to human-readable code
     pending_channels: RwLock<HashMap<u32, PendingChannel>>,
-    // Maps UUID to established channel
     active_channels: RwLock<HashMap<Uuid, ChannelState>>,
     word_list: Vec<&'static str>,
 }
@@ -102,8 +100,8 @@ async fn main() {
 
     // Create app state
     let state = Arc::new(AppState {
-        channels: RwLock::new(HashMap::new()),
-        connections: RwLock::new(HashMap::new()),
+        pending_channels: RwLock::new(HashMap::new()),
+        active_channels: RwLock::new(HashMap::new()),
         word_list,
     });
 
@@ -203,29 +201,7 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
         }
     };
 
-    info!("Channel established: {}", channel_code);
-
-    // Add connection to state
-    let conn_state = ConnectionState::new(sender.clone());
-    state
-        .connections
-        .write()
-        .await
-        .insert(channel_code.clone(), conn_state);
-
-    // Send confirmation to client
-    let response = match initial_message {
-        ClientMessage::NewChannel => ServerMessage::ChannelCreated {
-            code: channel_code.clone(),
-        },
-        ClientMessage::Connect { .. } => ServerMessage::Connected,
-        _ => unreachable!(),
-    };
-
-    if let Err(e) = send_message(&sender, &response) {
-        error!("Failed to send confirmation: {}", e);
-        return;
-    }
+    // Message handling is now done in handle_new_channel and handle_connect
 
     // Main message loop
     while let Some(result) = ws_receiver.next().await {
@@ -448,5 +424,21 @@ async fn reap_stale_connections(state: &Arc<AppState>) {
     for uuid in stale_active {
         warn!("Reaping stale active channel: {}", uuid);
         cleanup_connection(state, &uuid).await;
+    }
+}
+async fn get_peer_connection(
+    channel: &ChannelState,
+    sender: &mpsc::UnboundedSender<Result<Message, warp::Error>>,
+) -> Option<&ConnectionState> {
+    if let (Some(init), Some(resp)) = (&channel.initiator, &channel.responder) {
+        if std::ptr::eq(sender, &init.sender) {
+            Some(resp)
+        } else if std::ptr::eq(sender, &resp.sender) {
+            Some(init)
+        } else {
+            None
+        }
+    } else {
+        None
     }
 }
