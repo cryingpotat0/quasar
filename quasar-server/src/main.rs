@@ -18,7 +18,7 @@ use protocol::{ClientMessage, ServerMessage};
 
 const WORDLIST: &str = include_str!("wordlist.txt");
 
-#[derive(Parser)]
+#[derive(Parser, Clone)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Port to run the server on
@@ -188,12 +188,12 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
         }
     };
 
-    match initial_message {
+    let channel_uuid = match initial_message {
         ClientMessage::NewChannel => {
-            handle_new_channel(&state, connection).await;
+            handle_new_channel(&state, connection.clone()).await
         }
         ClientMessage::Connect { code } => {
-            handle_connect(&state, connection, &code).await;
+            handle_connect(&state, connection.clone(), &code).await
         }
         _ => {
             send_error_and_close(&connection, "Invalid initial message type").await;
@@ -201,13 +201,11 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
         }
     };
 
-    // Message handling is now done in handle_new_channel and handle_connect
-
     // Main message loop
     while let Some(result) = ws_receiver.next().await {
         match result {
             Ok(msg) => {
-                if let Err(e) = handle_message(msg, &channel_code, &state).await {
+                if let Err(e) = handle_message(msg, &channel_uuid, &state).await {
                     error!("Error handling message: {}", e);
                     break;
                 }
@@ -220,7 +218,7 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
     }
 
     // Clean up on disconnect
-    cleanup_connection(&state, &channel_code).await;
+    cleanup_connection(&state, &channel_uuid).await;
 }
 
 
@@ -352,8 +350,8 @@ async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code
 
     // Create active channel
     let active = ChannelState {
-        initiator: pending.initiator,
-        responder: connection,
+        initiator: Some(pending.initiator),
+        responder: Some(connection),
         created_at: std::time::Instant::now(),
     };
 
@@ -362,11 +360,15 @@ async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code
 
     // Send connected messages to both parties
     let msg = ServerMessage::Connected;
-    if let Err(e) = send_message(&active.initiator.sender, &msg) {
-        error!("Failed to send connected message to initiator: {}", e);
+    if let Some(init) = &active.initiator {
+        if let Err(e) = send_message(&init.sender, &msg) {
+            error!("Failed to send connected message to initiator: {}", e);
+        }
     }
-    if let Err(e) = send_message(&active.responder.sender, &msg) {
-        error!("Failed to send connected message to responder: {}", e);
+    if let Some(resp) = &active.responder {
+        if let Err(e) = send_message(&resp.sender, &msg) {
+            error!("Failed to send connected message to responder: {}", e);
+        }
     }
 }
 
@@ -377,11 +379,15 @@ async fn cleanup_connection(state: &Arc<AppState>, channel_uuid: &Uuid) {
             message: "Channel closed".to_string(),
         };
         
-        if let Err(e) = send_message(&channel.initiator.sender, &msg) {
-            error!("Failed to send disconnect message to initiator: {}", e);
+        if let Some(init) = &channel.initiator {
+            if let Err(e) = send_message(&init.sender, &msg) {
+                error!("Failed to send disconnect message to initiator: {}", e);
+            }
         }
-        if let Err(e) = send_message(&channel.responder.sender, &msg) {
-            error!("Failed to send disconnect message to responder: {}", e);
+        if let Some(resp) = &channel.responder {
+            if let Err(e) = send_message(&resp.sender, &msg) {
+                error!("Failed to send disconnect message to responder: {}", e);
+            }
         }
     }
 }
@@ -426,10 +432,10 @@ async fn reap_stale_connections(state: &Arc<AppState>) {
         cleanup_connection(state, &uuid).await;
     }
 }
-async fn get_peer_connection(
-    channel: &ChannelState,
+async fn get_peer_connection<'a>(
+    channel: &'a ChannelState,
     sender: &mpsc::UnboundedSender<Result<Message, warp::Error>>,
-) -> Option<&ConnectionState> {
+) -> Option<&'a ConnectionState> {
     if let (Some(init), Some(resp)) = (&channel.initiator, &channel.responder) {
         if std::ptr::eq(sender, &init.sender) {
             Some(resp)
