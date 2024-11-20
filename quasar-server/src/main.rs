@@ -53,7 +53,7 @@ struct ChannelState {
 
 #[derive(Clone)]
 struct ConnectionState {
-    sender: mpsc::UnboundedSender<Result<Message, warp::Error>>,
+    sender: mpsc::UnboundedSender<Result<Message, Error>>,
     last_message: std::time::Instant,
     ready: bool,
 }
@@ -224,7 +224,6 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
     cleanup_connection(&state, &channel_uuid).await;
 }
 
-
 async fn handle_message(
     msg: Message,
     channel_uuid: &Uuid,
@@ -246,7 +245,7 @@ async fn handle_message(
             _ => return Err("Incomplete channel state".into()),
         }
     };
-    
+
     sender_conn.last_message = std::time::Instant::now();
 
     match client_msg {
@@ -260,14 +259,18 @@ async fn handle_message(
             }
 
             // Forward data to the receiver
-            let msg = ServerMessage::Data { content: content };
+            let msg = ServerMessage::Data { content };
             send_message(&receiver_conn.sender, &msg)?;
         }
         ClientMessage::ConnectAck => {
             sender_conn.ready = true;
         }
         _ => {
-            send_error_and_close(sender_conn, "Invalid message type for established connection").await;
+            send_error_and_close(
+                sender_conn,
+                "Invalid message type for established connection",
+            )
+            .await;
         }
     }
     Ok(())
@@ -291,10 +294,9 @@ async fn send_error_and_close(conn: &ConnectionState, error_msg: &str) {
     }
 }
 
-
 async fn handle_new_channel(state: &Arc<AppState>, connection: ConnectionState) {
     let mut rng = ChaCha20Rng::from_entropy();
-    
+
     // Generate channel ID and display code
     let channel_id: u32 = loop {
         let id = rng.gen_range(0..=9999);
@@ -314,8 +316,12 @@ async fn handle_new_channel(state: &Arc<AppState>, connection: ConnectionState) 
     };
 
     // Store pending channel
-    state.pending_channels.write().await.insert(channel_id, pending);
-    
+    state
+        .pending_channels
+        .write()
+        .await
+        .insert(channel_id, pending);
+
     debug!("Created new pending channel with UUID: {}", channel_id);
 
     // Send channel created message
@@ -336,9 +342,7 @@ async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code
     };
 
     let pending = match channel_id_opt {
-        Some(id) => {
-            state.pending_channels.write().await.remove(&id).unwrap()
-        }
+        Some(id) => state.pending_channels.write().await.remove(&id).unwrap(),
         None => {
             send_error_and_close(&connection, "Invalid channel code").await;
             return;
@@ -350,17 +354,24 @@ async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code
 
     // Create active channel
     let (init_conn, resp_conn) = (pending.initiator, connection);
-    
+
     // Store active channel
     let channel_state = ChannelState {
         initiator: Some(init_conn.clone()),
         responder: Some(resp_conn.clone()),
         created_at: std::time::Instant::now(),
     };
-    
-    state.active_channels.write().await.insert(channel_uuid, channel_state);
-    
-    info!("Channel {} activated with both peers connected", channel_uuid);
+
+    state
+        .active_channels
+        .write()
+        .await
+        .insert(channel_uuid, channel_state);
+
+    info!(
+        "Channel {} activated with both peers connected",
+        channel_uuid
+    );
 
     // Send connected messages to both parties
     let msg = ServerMessage::Connected;
@@ -375,7 +386,7 @@ async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code
 async fn cleanup_connection(state: &Arc<AppState>, channel_uuid: &Uuid) {
     if let Some(channel) = state.active_channels.write().await.remove(channel_uuid) {
         debug!("Cleaning up channel {}", channel_uuid);
-        
+
         // Send disconnect message to both parties
         let msg = ServerMessage::Error {
             message: "Channel closed".to_string(),
@@ -385,14 +396,18 @@ async fn cleanup_connection(state: &Arc<AppState>, channel_uuid: &Uuid) {
                 error!("Failed to send disconnect message to initiator: {}", e);
             }
             // Force close the websocket
-            let _ = init.sender.send(Err(warp::Error::new("Connection closed")));
+            let _ = init
+                .sender
+                .send(Err(warp::Error::from("Connection closed")));
         }
         if let Some(resp) = &channel.responder {
             if let Err(e) = send_message(&resp.sender, &msg) {
                 error!("Failed to send disconnect message to responder: {}", e);
             }
             // Force close the websocket
-            let _ = resp.sender.send(Err(warp::Error::new("Connection closed")));
+            let _ = resp
+                .sender
+                .send(Err(warp::Error::from("Connection closed")));
         }
     }
 }
