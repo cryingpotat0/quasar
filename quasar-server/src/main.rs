@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::timeout;
-use tracing::{error, info, warn};
+use tracing::{error, warn};
 use warp::ws::{Message, WebSocket};
 use warp::Filter;
 
@@ -319,7 +319,7 @@ async fn handle_new_channel(state: &Arc<AppState>, connection: ConnectionState) 
     // Create pending channel
     let pending = PendingChannel {
         display_code: display_code.clone(),
-        initiator: connection,
+        initiator: connection.clone(),
         created_at: std::time::Instant::now(),
     };
 
@@ -345,15 +345,13 @@ async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code
 
     let pending = match channel_id_opt {
         Some(id) => {
-            let mut pending_channels = state.pending_channels.write().await;
-            pending_channels.remove(&id).unwrap()
+            state.pending_channels.write().await.remove(&id).unwrap()
         }
         None => {
             send_error_and_close(&connection, "Invalid channel code").await;
             return;
         }
     };
-    drop(pending_channels);
 
     // Create UUID for the active channel
     let channel_uuid = Uuid::new_v4();
@@ -424,7 +422,7 @@ async fn reap_stale_connections(state: &Arc<AppState>) {
     }
 
     // Clean up active channels
-    let mut active = state.active_channels.write().await;
+    let active = state.active_channels.write().await;
     let stale_active: Vec<_> = active
         .iter()
         .filter(|(_, channel)| {
