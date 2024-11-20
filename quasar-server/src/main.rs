@@ -31,15 +31,25 @@ struct Args {
 }
 
 // Struct to hold our application state
+use uuid::Uuid;
+
 struct AppState {
-    channels: RwLock<HashMap<u32, String>>,
-    active_channels: RwLock<HashMap<String, ChannelState>>,
+    // Maps channel ID to human-readable code
+    pending_channels: RwLock<HashMap<u32, PendingChannel>>,
+    // Maps UUID to established channel
+    active_channels: RwLock<HashMap<Uuid, ChannelState>>,
     word_list: Vec<&'static str>,
 }
 
+struct PendingChannel {
+    display_code: String,
+    initiator: ConnectionState,
+    created_at: std::time::Instant,
+}
+
 struct ChannelState {
-    initiator: Option<ConnectionState>,
-    responder: Option<ConnectionState>,
+    initiator: ConnectionState,
+    responder: ConnectionState,
     created_at: std::time::Instant,
 }
 
