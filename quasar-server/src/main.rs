@@ -385,14 +385,14 @@ async fn cleanup_connection(state: &Arc<AppState>, channel_uuid: &Uuid) {
                 error!("Failed to send disconnect message to initiator: {}", e);
             }
             // Force close the websocket
-            let _ = init.sender.send(Err(warp::Error::new()));
+            let _ = init.sender.send(Err(warp::Error::reject()));
         }
         if let Some(resp) = &channel.responder {
             if let Err(e) = send_message(&resp.sender, &msg) {
                 error!("Failed to send disconnect message to responder: {}", e);
             }
             // Force close the websocket
-            let _ = resp.sender.send(Err(warp::Error::new()));
+            let _ = resp.sender.send(Err(warp::Error::reject()));
         }
     }
 }
