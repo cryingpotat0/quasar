@@ -129,7 +129,8 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
             return;
         }
         Err(_) => {
-            send_error_and_close(&sender, "Timeout waiting for initial message").await;
+            let temp_conn = ConnectionState::new(sender.clone());
+            send_error_and_close(&temp_conn, "Timeout waiting for initial message").await;
             return;
         }
     };
@@ -137,7 +138,8 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
     let initial_text = match initial_msg.to_str() {
         Ok(text) => text,
         Err(_) => {
-            send_error_and_close(&sender, "Invalid message format").await;
+            let temp_conn = ConnectionState::new(sender.clone());
+            send_error_and_close(&temp_conn, "Invalid message format").await;
             return;
         }
     };
@@ -145,7 +147,8 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
     let initial_message: ClientMessage = match serde_json::from_str(initial_text) {
         Ok(msg) => msg,
         Err(_) => {
-            send_error_and_close(&sender, "Invalid message format").await;
+            let temp_conn = ConnectionState::new(sender.clone());
+            send_error_and_close(&temp_conn, "Invalid message format").await;
             return;
         }
     };
@@ -154,13 +157,15 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
         ClientMessage::NewChannel => generate_channel_code(&state).await,
         ClientMessage::Connect { code } => {
             if !validate_channel_code(&code, &state).await {
-                send_error_and_close(&sender, "Invalid channel code").await;
+                let temp_conn = ConnectionState::new(sender.clone());
+                send_error_and_close(&temp_conn, "Invalid channel code").await;
                 return;
             }
             code
         }
         _ => {
-            send_error_and_close(&sender, "Invalid initial message type").await;
+            let temp_conn = ConnectionState::new(sender.clone());
+            send_error_and_close(&temp_conn, "Invalid initial message type").await;
             return;
         }
     };
