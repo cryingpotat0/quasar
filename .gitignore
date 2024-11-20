@@ -2,3 +2,5 @@
 _old
 node_modules
 dist
+.aider*
+.env

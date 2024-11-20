@@ -42,6 +42,7 @@ struct AppState {
 struct PendingChannel {
     display_code: String,
     initiator: ConnectionState,
+    uuid: Uuid,
     created_at: std::time::Instant,
 }
 
@@ -142,6 +143,11 @@ fn with_state(
 }
 
 async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
+    handle_websocket_inner(ws, state)
+        .await
+        .unwrap_or_else(|e| error!("Error handling websocket: {}", e));
+}
+async fn handle_websocket_inner(ws: WebSocket, state: Arc<AppState>) -> anyhow::Result<()> {
     let (ws_sender, mut ws_receiver) = ws.split();
     let (sender, receiver) = mpsc::unbounded_channel::<Result<Message, warp::Error>>();
     let receiver = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
@@ -155,20 +161,21 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
     let connection = ConnectionState::new(sender.clone());
 
     // Wait for initial message with timeout
-    let initial_msg = match timeout(Duration::from_secs(5), ws_receiver.next()).await {
+    let initial_msg = match timeout(Duration::from_secs(20), ws_receiver.next()).await {
         Ok(Some(Ok(msg))) => msg,
         Ok(Some(Err(e))) => {
-            error!("WebSocket error during initial message: {}", e);
-            return;
+            return Err(anyhow::anyhow!(
+                "WebSocket error during initial message: {}",
+                e
+            ));
         }
         Ok(None) => {
-            error!("WebSocket closed during initial message");
-            return;
+            return Err(anyhow::anyhow!("WebSocket closed during initial message"));
         }
         Err(_) => {
             let temp_conn = ConnectionState::new(sender.clone());
             send_error_and_close(&temp_conn, "Timeout waiting for initial message").await;
-            return;
+            return Err(anyhow::anyhow!("Timeout waiting for initial message"));
         }
     };
 
@@ -177,7 +184,7 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
         Err(_) => {
             let temp_conn = ConnectionState::new(sender.clone());
             send_error_and_close(&temp_conn, "Invalid message format").await;
-            return;
+            return Err(anyhow::anyhow!("Invalid message format"));
         }
     };
 
@@ -185,22 +192,32 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
         Ok(msg) => msg,
         Err(_) => {
             send_error_and_close(&connection, "Invalid message format").await;
-            return;
+            return Err(anyhow::anyhow!("Invalid message format"));
         }
     };
 
     let channel_uuid = match initial_message {
-        ClientMessage::NewChannel => {
-            handle_new_channel(&state, connection.clone()).await;
-            Uuid::new_v4()
-        }
+        ClientMessage::NewChannel => match handle_new_channel(&state, connection.clone()).await {
+            Ok(uuid) => uuid,
+            Err(e) => {
+                error!("Error {e} creating new channel");
+                send_error_and_close(&connection, "Error creating new channel").await;
+                return Err(anyhow::anyhow!("Error creating new channel"));
+            }
+        },
         ClientMessage::Connect { code } => {
-            handle_connect(&state, connection.clone(), &code).await;
-            Uuid::new_v4()
+            match handle_connect(&state, connection.clone(), &code).await {
+                Ok(uuid) => uuid,
+                Err(e) => {
+                    error!("Error {e} connecting to channel with code {code}");
+                    send_error_and_close(&connection, "Error on other connection").await;
+                    return Err(anyhow::anyhow!("Error connecting to channel"));
+                }
+            }
         }
         _ => {
             send_error_and_close(&connection, "Invalid initial message type").await;
-            return;
+            return Ok(());
         }
     };
 
@@ -222,6 +239,7 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
 
     // Clean up on disconnect
     cleanup_connection(&state, &channel_uuid).await;
+    Ok(())
 }
 
 async fn handle_message(
@@ -235,7 +253,7 @@ async fn handle_message(
     let mut active_channels = state.active_channels.write().await;
     let channel = active_channels
         .get_mut(channel_uuid)
-        .ok_or("Channel not found")?;
+        .ok_or(format!("Channel {channel_uuid} not found"))?;
 
     // Update last message timestamp for the sender
     let (sender_conn, receiver_conn) = {
@@ -252,11 +270,11 @@ async fn handle_message(
         ClientMessage::Data { content } => {
             debug!("Received data message on channel {}", channel_uuid);
             // Check if both sides are ready
-            if !sender_conn.ready || !receiver_conn.ready {
-                send_error_and_close(sender_conn, "Data sent before connection ready").await;
-                send_error_and_close(receiver_conn, "Data sent before connection ready").await;
-                return Ok(());
-            }
+            // if !sender_conn.ready || !receiver_conn.ready {
+            //     send_error_and_close(sender_conn, "Data sent before connection ready").await;
+            //     send_error_and_close(receiver_conn, "Data sent before connection ready").await;
+            //     return Ok(());
+            // }
 
             // Forward data to the receiver
             let msg = ServerMessage::Data { content };
@@ -294,7 +312,10 @@ async fn send_error_and_close(conn: &ConnectionState, error_msg: &str) {
     }
 }
 
-async fn handle_new_channel(state: &Arc<AppState>, connection: ConnectionState) {
+async fn handle_new_channel(
+    state: &Arc<AppState>,
+    connection: ConnectionState,
+) -> anyhow::Result<Uuid> {
     let mut rng = ChaCha20Rng::from_entropy();
 
     // Generate channel ID and display code
@@ -311,9 +332,12 @@ async fn handle_new_channel(state: &Arc<AppState>, connection: ConnectionState) 
     // Create pending channel
     let pending = PendingChannel {
         display_code: display_code.clone(),
+        uuid: Uuid::new_v4(),
         initiator: connection.clone(),
         created_at: std::time::Instant::now(),
     };
+
+    let channel_uuid = pending.uuid.clone();
 
     // Store pending channel
     state
@@ -322,16 +346,23 @@ async fn handle_new_channel(state: &Arc<AppState>, connection: ConnectionState) 
         .await
         .insert(channel_id, pending);
 
-    debug!("Created new pending channel with UUID: {}", channel_id);
+    debug!("Created new pending channel at: {}", channel_id);
 
     // Send channel created message
     let msg = ServerMessage::ChannelCreated { code: display_code };
     if let Err(e) = send_message(&connection.sender, &msg) {
         error!("Failed to send channel created message: {}", e);
+        return Err(anyhow::anyhow!("Failed to send channel created message"));
     }
+
+    Ok(channel_uuid)
 }
 
-async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code: &str) {
+async fn handle_connect(
+    state: &Arc<AppState>,
+    connection: ConnectionState,
+    code: &str,
+) -> anyhow::Result<Uuid> {
     // Find pending channel by display code
     let channel_id_opt = {
         let pending_channels = state.pending_channels.read().await;
@@ -345,12 +376,12 @@ async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code
         Some(id) => state.pending_channels.write().await.remove(&id).unwrap(),
         None => {
             send_error_and_close(&connection, "Invalid channel code").await;
-            return;
+            return Err(anyhow::anyhow!("Invalid channel code"));
         }
     };
 
     // Create UUID for the active channel
-    let channel_uuid = Uuid::new_v4();
+    let channel_uuid = pending.uuid;
 
     // Create active channel
     let (init_conn, resp_conn) = (pending.initiator, connection);
@@ -376,11 +407,19 @@ async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code
     // Send connected messages to both parties
     let msg = ServerMessage::Connected;
     if let Err(e) = send_message(&init_conn.sender, &msg) {
-        error!("Failed to send connected message to initiator: {}", e);
+        return Err(anyhow::anyhow!(
+            "Failed to send connected message to initiator: {}",
+            e
+        ));
     }
     if let Err(e) = send_message(&resp_conn.sender, &msg) {
-        error!("Failed to send connected message to responder: {}", e);
+        return Err(anyhow::anyhow!(
+            "Failed to send connected message to responder: {}",
+            e
+        ));
     }
+
+    return Ok(channel_uuid);
 }
 
 async fn cleanup_connection(state: &Arc<AppState>, channel_uuid: &Uuid) {
@@ -396,61 +435,57 @@ async fn cleanup_connection(state: &Arc<AppState>, channel_uuid: &Uuid) {
                 error!("Failed to send disconnect message to initiator: {}", e);
             }
             // Force close the websocket
-            let _ = init
-                .sender
-                .send(Err(warp::Error::closed()));
+            // let _ = init.sender.send(Err(warp::Error::from()));
         }
         if let Some(resp) = &channel.responder {
             if let Err(e) = send_message(&resp.sender, &msg) {
                 error!("Failed to send disconnect message to responder: {}", e);
             }
             // Force close the websocket
-            let _ = resp
-                .sender
-                .send(Err(warp::Error::closed()));
+            // let _ = resp.sender.send(Err(warp::Error::closed()));
         }
     }
 }
 
 async fn reap_stale_connections(state: &Arc<AppState>) {
     // Clean up pending channels
-    {
-        let mut pending = state.pending_channels.write().await;
-        let stale_pending: Vec<_> = pending
-            .iter()
-            .filter(|(_, channel)| channel.created_at.elapsed() > Duration::from_secs(60))
-            .map(|(id, _)| *id)
-            .collect();
+    // {
+    //     let mut pending = state.pending_channels.write().await;
+    //     let stale_pending: Vec<_> = pending
+    //         .iter()
+    //         .filter(|(_, channel)| channel.created_at.elapsed() > Duration::from_secs(60))
+    //         .map(|(id, _)| *id)
+    //         .collect();
 
-        for id in stale_pending {
-            warn!("Reaping stale pending channel: {}", id);
-            if let Some(channel) = pending.remove(&id) {
-                let msg = ServerMessage::Error {
-                    message: "Channel timed out".to_string(),
-                };
-                if let Err(e) = send_message(&channel.initiator.sender, &msg) {
-                    error!("Failed to send timeout message: {}", e);
-                }
-            }
-        }
-    }
+    //     for id in stale_pending {
+    //         warn!("Reaping stale pending channel: {}", id);
+    //         if let Some(channel) = pending.remove(&id) {
+    //             let msg = ServerMessage::Error {
+    //                 message: "Channel timed out".to_string(),
+    //             };
+    //             if let Err(e) = send_message(&channel.initiator.sender, &msg) {
+    //                 error!("Failed to send timeout message: {}", e);
+    //             }
+    //         }
+    //     }
+    // }
 
-    // Clean up active channels
-    let active = state.active_channels.write().await;
-    let stale_active: Vec<_> = active
-        .iter()
-        .filter(|(_, channel)| {
-            channel.created_at.elapsed() > Duration::from_secs(300 * 1) || // 5 minute total lifetime
-            channel.initiator.as_ref().map_or(true, |c| c.last_message.elapsed() > Duration::from_secs(60)) ||
-            channel.responder.as_ref().map_or(true, |c| c.last_message.elapsed() > Duration::from_secs(60))
-        })
-        .map(|(uuid, _)| *uuid)
-        .collect();
+    // // Clean up active channels
+    // let active = state.active_channels.write().await;
+    // let stale_active: Vec<_> = active
+    //     .iter()
+    //     .filter(|(_, channel)| {
+    //         channel.created_at.elapsed() > Duration::from_secs(300 * 1) || // 5 minute total lifetime
+    //         channel.initiator.as_ref().map_or(true, |c| c.last_message.elapsed() > Duration::from_secs(60)) ||
+    //         channel.responder.as_ref().map_or(true, |c| c.last_message.elapsed() > Duration::from_secs(60))
+    //     })
+    //     .map(|(uuid, _)| *uuid)
+    //     .collect();
 
-    for uuid in stale_active {
-        warn!("Reaping stale active channel: {}", uuid);
-        cleanup_connection(state, &uuid).await;
-    }
+    // for uuid in stale_active {
+    //     warn!("Reaping stale active channel: {}", uuid);
+    //     cleanup_connection(state, &uuid).await;
+    // }
 }
 async fn get_peer_connection<'a>(
     channel: &'a ChannelState,
