@@ -155,8 +155,8 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
 
     let channel_code = match initial_message {
         ClientMessage::NewChannel => generate_channel_code(&state).await,
-        ClientMessage::Connect { code } => {
-            if !validate_channel_code(&code, &state).await {
+        ClientMessage::Connect { ref code } => {
+            if !validate_channel_code(code, &state).await {
                 let temp_conn = ConnectionState::new(sender.clone());
                 send_error_and_close(&temp_conn, "Invalid channel code").await;
                 return;
@@ -242,7 +242,7 @@ async fn handle_message(
     channel_code: &str,
     state: &Arc<AppState>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let text = msg.to_str()?;
+    let text = msg.to_str().map_err(|_| "Invalid message format")?;
     let client_msg: ClientMessage = serde_json::from_str(text)?;
 
     // Update last message timestamp
