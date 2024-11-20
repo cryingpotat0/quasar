@@ -247,28 +247,6 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
     cleanup_connection(&state, &channel_code).await;
 }
 
-async fn validate_channel_code(code: &str, state: &Arc<AppState>) -> bool {
-    state.channels.read().await.values().any(|v| v == code)
-}
-async fn generate_channel_code(state: &Arc<AppState>) -> String {
-    let mut rng = ChaCha20Rng::from_entropy();
-    let channel_id: u32 = loop {
-        let id = rng.gen_range(0..=9999);
-        if !state.channels.read().await.contains_key(&id) {
-            break id;
-        }
-    };
-
-    let words: Vec<&&'static str> = state.word_list.choose_multiple(&mut rng, 3).collect();
-    let code = format!("{}-{}-{}-{}", channel_id, words[0], words[1], words[2]);
-
-    state
-        .channels
-        .write()
-        .await
-        .insert(channel_id, code.clone());
-    code
-}
 
 async fn handle_message(
     msg: Message,
@@ -355,30 +333,87 @@ async fn send_error_and_close_all(
     }
 }
 
-async fn cleanup_connection(state: &Arc<AppState>, channel_code: &str) {
-    let mut connections = state.connections.write().await;
-    connections.remove(channel_code);
+async fn handle_new_channel(state: &Arc<AppState>, connection: ConnectionState) {
+    let mut rng = ChaCha20Rng::from_entropy();
+    
+    // Generate channel ID and display code
+    let channel_id: u32 = loop {
+        let id = rng.gen_range(0..=9999);
+        if !state.pending_channels.read().await.contains_key(&id) {
+            break id;
+        }
+    };
 
-    // If this was a channel owner, clean up the channel
-    if let Some((channel_id, _)) = state
-        .channels
-        .read()
-        .await
-        .iter()
-        .find(|(_, v)| **v == channel_code)
-    {
-        state.channels.write().await.remove(channel_id);
+    let words: Vec<&&'static str> = state.word_list.choose_multiple(&mut rng, 3).collect();
+    let display_code = format!("{}-{}-{}-{}", channel_id, words[0], words[1], words[2]);
+
+    // Create pending channel
+    let pending = PendingChannel {
+        display_code: display_code.clone(),
+        initiator: connection,
+        created_at: std::time::Instant::now(),
+    };
+
+    // Store pending channel
+    state.pending_channels.write().await.insert(channel_id, pending);
+
+    // Send channel created message
+    let msg = ServerMessage::ChannelCreated { code: display_code };
+    if let Err(e) = send_message(&connection.sender, &msg) {
+        error!("Failed to send channel created message: {}", e);
     }
+}
 
-    // Disconnect the other side if it exists
-    for (other_code, other_conn) in connections.iter() {
-        if other_code != channel_code {
-            let msg = ServerMessage::Error {
-                message: "Other party disconnected".to_string(),
-            };
-            if let Err(e) = send_message(&other_conn.sender, &msg) {
-                error!("Failed to send disconnect message: {}", e);
-            }
+async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code: &str) {
+    // Find pending channel by display code
+    let mut pending_channels = state.pending_channels.write().await;
+    let (channel_id, pending) = match pending_channels
+        .iter()
+        .find(|(_, p)| p.display_code == code)
+    {
+        Some((id, _)) => (*id, pending_channels.remove(id).unwrap()),
+        None => {
+            send_error_and_close(&connection, "Invalid channel code").await;
+            return;
+        }
+    };
+    drop(pending_channels);
+
+    // Create UUID for the active channel
+    let channel_uuid = Uuid::new_v4();
+
+    // Create active channel
+    let active = ChannelState {
+        initiator: pending.initiator,
+        responder: connection,
+        created_at: std::time::Instant::now(),
+    };
+
+    // Store active channel
+    state.active_channels.write().await.insert(channel_uuid, active);
+
+    // Send connected messages to both parties
+    let msg = ServerMessage::Connected;
+    if let Err(e) = send_message(&active.initiator.sender, &msg) {
+        error!("Failed to send connected message to initiator: {}", e);
+    }
+    if let Err(e) = send_message(&active.responder.sender, &msg) {
+        error!("Failed to send connected message to responder: {}", e);
+    }
+}
+
+async fn cleanup_connection(state: &Arc<AppState>, channel_uuid: &Uuid) {
+    if let Some(channel) = state.active_channels.write().await.remove(channel_uuid) {
+        // Send disconnect message to both parties
+        let msg = ServerMessage::Error {
+            message: "Channel closed".to_string(),
+        };
+        
+        if let Err(e) = send_message(&channel.initiator.sender, &msg) {
+            error!("Failed to send disconnect message to initiator: {}", e);
+        }
+        if let Err(e) = send_message(&channel.responder.sender, &msg) {
+            error!("Failed to send disconnect message to responder: {}", e);
         }
     }
 }
