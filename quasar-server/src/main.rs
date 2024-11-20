@@ -1,5 +1,5 @@
 use clap::Parser;
-use futures::{FutureExt, StreamExt};
+use futures::StreamExt;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rand::SeedableRng;
@@ -10,7 +10,6 @@ use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
-use anyhow::Error;
 use warp::ws::{Message, WebSocket};
 use warp::Filter;
 
@@ -54,7 +53,7 @@ struct ChannelState {
 
 #[derive(Clone)]
 struct ConnectionState {
-    sender: mpsc::UnboundedSender<Result<Message, anyhow::Error>>,
+    sender: mpsc::UnboundedSender<Result<Message, warp::Error>>,
     last_message: std::time::Instant,
     ready: bool,
 }
@@ -147,7 +146,7 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
     let (sender, receiver) = mpsc::unbounded_channel::<Result<Message, anyhow::Error>>();
     let receiver = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
 
-    tokio::task::spawn(receiver.forward(ws_sender).map(|result| {
+    tokio::task::spawn(receiver.forward(ws_sender).then(|result| async move {
         if let Err(e) = result {
             error!("Error sending websocket message: {}", e);
         }
@@ -458,9 +457,9 @@ async fn get_peer_connection<'a>(
     sender: &mpsc::UnboundedSender<Result<Message, warp::Error>>,
 ) -> Option<&'a ConnectionState> {
     if let (Some(init), Some(resp)) = (&channel.initiator, &channel.responder) {
-        if std::ptr::eq(sender, &init.sender) {
+        if std::ptr::eq(sender as *const _, &init.sender as *const _) {
             Some(resp)
-        } else if std::ptr::eq(sender, &resp.sender) {
+        } else if std::ptr::eq(sender as *const _, &resp.sender as *const _) {
             Some(init)
         } else {
             None
