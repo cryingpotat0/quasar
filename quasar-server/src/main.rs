@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::timeout;
-use tracing::{error, warn};
+use tracing::{debug, error, info, warn};
 use warp::ws::{Message, WebSocket};
 use warp::Filter;
 
@@ -250,7 +250,8 @@ async fn handle_message(
     sender_conn.last_message = std::time::Instant::now();
 
     match client_msg {
-        ClientMessage::Data { content } => {
+        ClientMessage::Data { content: _ } => {
+            debug!("Received data message on channel {}", channel_uuid);
             // Check if both sides are ready
             if !sender_conn.ready || !receiver_conn.ready {
                 send_error_and_close(sender_conn, "Data sent before connection ready").await;
@@ -314,6 +315,8 @@ async fn handle_new_channel(state: &Arc<AppState>, connection: ConnectionState) 
 
     // Store pending channel
     state.pending_channels.write().await.insert(channel_id, pending);
+    
+    debug!("Created new pending channel with UUID: {}", channel_id);
 
     // Send channel created message
     let msg = ServerMessage::ChannelCreated { code: display_code };
@@ -356,6 +359,8 @@ async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code
     };
     
     state.active_channels.write().await.insert(channel_uuid, channel_state);
+    
+    info!("Channel {} activated with both peers connected", channel_uuid);
 
     // Send connected messages to both parties
     let msg = ServerMessage::Connected;
@@ -369,20 +374,25 @@ async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code
 
 async fn cleanup_connection(state: &Arc<AppState>, channel_uuid: &Uuid) {
     if let Some(channel) = state.active_channels.write().await.remove(channel_uuid) {
+        debug!("Cleaning up channel {}", channel_uuid);
+        
         // Send disconnect message to both parties
         let msg = ServerMessage::Error {
             message: "Channel closed".to_string(),
         };
-        
         if let Some(init) = &channel.initiator {
             if let Err(e) = send_message(&init.sender, &msg) {
                 error!("Failed to send disconnect message to initiator: {}", e);
             }
+            // Force close the websocket
+            let _ = init.sender.send(Err(warp::Error::closed()));
         }
         if let Some(resp) = &channel.responder {
             if let Err(e) = send_message(&resp.sender, &msg) {
                 error!("Failed to send disconnect message to responder: {}", e);
             }
+            // Force close the websocket
+            let _ = resp.sender.send(Err(warp::Error::closed()));
         }
     }
 }
@@ -415,7 +425,7 @@ async fn reap_stale_connections(state: &Arc<AppState>) {
     let stale_active: Vec<_> = active
         .iter()
         .filter(|(_, channel)| {
-            channel.created_at.elapsed() > Duration::from_secs(300) || // 5 minute total lifetime
+            channel.created_at.elapsed() > Duration::from_secs(300 * 1) || // 5 minute total lifetime
             channel.initiator.as_ref().map_or(true, |c| c.last_message.elapsed() > Duration::from_secs(60)) ||
             channel.responder.as_ref().map_or(true, |c| c.last_message.elapsed() > Duration::from_secs(60))
         })
