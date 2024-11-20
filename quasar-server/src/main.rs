@@ -10,6 +10,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
+use anyhow::Error;
 use warp::ws::{Message, WebSocket};
 use warp::Filter;
 
@@ -53,13 +54,13 @@ struct ChannelState {
 
 #[derive(Clone)]
 struct ConnectionState {
-    sender: mpsc::UnboundedSender<Result<Message, Error>>,
+    sender: mpsc::UnboundedSender<Result<Message, anyhow::Error>>,
     last_message: std::time::Instant,
     ready: bool,
 }
 
 impl ConnectionState {
-    fn new(sender: mpsc::UnboundedSender<Result<Message, warp::Error>>) -> Self {
+    fn new(sender: mpsc::UnboundedSender<Result<Message, anyhow::Error>>) -> Self {
         Self {
             sender,
             last_message: std::time::Instant::now(),
@@ -143,7 +144,7 @@ fn with_state(
 
 async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
     let (ws_sender, mut ws_receiver) = ws.split();
-    let (sender, receiver) = mpsc::unbounded_channel::<Result<Message, warp::Error>>();
+    let (sender, receiver) = mpsc::unbounded_channel::<Result<Message, anyhow::Error>>();
     let receiver = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
 
     tokio::task::spawn(receiver.forward(ws_sender).map(|result| {
