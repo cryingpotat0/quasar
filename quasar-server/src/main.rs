@@ -250,7 +250,7 @@ async fn handle_message(
     sender_conn.last_message = std::time::Instant::now();
 
     match client_msg {
-        ClientMessage::Data { content: _ } => {
+        ClientMessage::Data { content } => {
             debug!("Received data message on channel {}", channel_uuid);
             // Check if both sides are ready
             if !sender_conn.ready || !receiver_conn.ready {
@@ -260,7 +260,7 @@ async fn handle_message(
             }
 
             // Forward data to the receiver
-            let msg = ServerMessage::Data { content };
+            let msg = ServerMessage::Data { content: content };
             send_message(&receiver_conn.sender, &msg)?;
         }
         ClientMessage::ConnectAck => {
@@ -385,14 +385,14 @@ async fn cleanup_connection(state: &Arc<AppState>, channel_uuid: &Uuid) {
                 error!("Failed to send disconnect message to initiator: {}", e);
             }
             // Force close the websocket
-            let _ = init.sender.send(Err(warp::Error::closed()));
+            let _ = init.sender.send(Err(warp::Error::new()));
         }
         if let Some(resp) = &channel.responder {
             if let Err(e) = send_message(&resp.sender, &msg) {
                 error!("Failed to send disconnect message to responder: {}", e);
             }
             // Force close the websocket
-            let _ = resp.sender.send(Err(warp::Error::closed()));
+            let _ = resp.sender.send(Err(warp::Error::new()));
         }
     }
 }
