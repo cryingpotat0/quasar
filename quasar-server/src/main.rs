@@ -51,6 +51,7 @@ struct ChannelState {
     created_at: std::time::Instant,
 }
 
+#[derive(Clone)]
 struct ConnectionState {
     sender: mpsc::UnboundedSender<Result<Message, warp::Error>>,
     last_message: std::time::Instant,
@@ -190,10 +191,12 @@ async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
 
     let channel_uuid = match initial_message {
         ClientMessage::NewChannel => {
-            handle_new_channel(&state, connection.clone()).await
+            handle_new_channel(&state, connection.clone()).await;
+            Uuid::new_v4()
         }
         ClientMessage::Connect { code } => {
-            handle_connect(&state, connection.clone(), &code).await
+            handle_connect(&state, connection.clone(), &code).await;
+            Uuid::new_v4()
         }
         _ => {
             send_error_and_close(&connection, "Invalid initial message type").await;
@@ -299,7 +302,7 @@ async fn send_error_and_close_all(
     }
 }
 
-async fn handle_new_channel(state: &Arc<AppState>, connection: ConnectionState) {
+async fn handle_new_channel(state: &Arc<AppState>, connection: ConnectionState) -> () {
     let mut rng = ChaCha20Rng::from_entropy();
     
     // Generate channel ID and display code
@@ -330,14 +333,21 @@ async fn handle_new_channel(state: &Arc<AppState>, connection: ConnectionState) 
     }
 }
 
-async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code: &str) {
+async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code: &str) -> () {
     // Find pending channel by display code
-    let mut pending_channels = state.pending_channels.write().await;
-    let (channel_id, pending) = match pending_channels
-        .iter()
-        .find(|(_, p)| p.display_code == code)
-    {
-        Some((id, _)) => (*id, pending_channels.remove(id).unwrap()),
+    let channel_id_opt = {
+        let pending_channels = state.pending_channels.read().await;
+        pending_channels
+            .iter()
+            .find(|(_, p)| p.display_code == code)
+            .map(|(id, _)| *id)
+    };
+
+    let pending = match channel_id_opt {
+        Some(id) => {
+            let mut pending_channels = state.pending_channels.write().await;
+            pending_channels.remove(&id).unwrap()
+        }
         None => {
             send_error_and_close(&connection, "Invalid channel code").await;
             return;
@@ -349,26 +359,24 @@ async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code
     let channel_uuid = Uuid::new_v4();
 
     // Create active channel
-    let active = ChannelState {
-        initiator: Some(pending.initiator),
-        responder: Some(connection),
+    let (init_conn, resp_conn) = (pending.initiator, connection);
+    
+    // Store active channel
+    let channel_state = ChannelState {
+        initiator: Some(init_conn.clone()),
+        responder: Some(resp_conn.clone()),
         created_at: std::time::Instant::now(),
     };
-
-    // Store active channel
-    state.active_channels.write().await.insert(channel_uuid, active);
+    
+    state.active_channels.write().await.insert(channel_uuid, channel_state);
 
     // Send connected messages to both parties
     let msg = ServerMessage::Connected;
-    if let Some(init) = &active.initiator {
-        if let Err(e) = send_message(&init.sender, &msg) {
-            error!("Failed to send connected message to initiator: {}", e);
-        }
+    if let Err(e) = send_message(&init_conn.sender, &msg) {
+        error!("Failed to send connected message to initiator: {}", e);
     }
-    if let Some(resp) = &active.responder {
-        if let Err(e) = send_message(&resp.sender, &msg) {
-            error!("Failed to send connected message to responder: {}", e);
-        }
+    if let Err(e) = send_message(&resp_conn.sender, &msg) {
+        error!("Failed to send connected message to responder: {}", e);
     }
 }
 
