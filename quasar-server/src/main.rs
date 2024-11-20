@@ -290,19 +290,8 @@ async fn send_error_and_close(conn: &ConnectionState, error_msg: &str) {
     }
 }
 
-async fn send_error_and_close_all(
-    connections: &HashMap<String, ConnectionState>,
-    channel_code: &str,
-    error_msg: &str,
-) {
-    for (code, conn) in connections.iter() {
-        if code == channel_code || connections.values().any(|c| c.ready) {
-            send_error_and_close(conn, error_msg).await;
-        }
-    }
-}
 
-async fn handle_new_channel(state: &Arc<AppState>, connection: ConnectionState) -> () {
+async fn handle_new_channel(state: &Arc<AppState>, connection: ConnectionState) {
     let mut rng = ChaCha20Rng::from_entropy();
     
     // Generate channel ID and display code
@@ -333,7 +322,7 @@ async fn handle_new_channel(state: &Arc<AppState>, connection: ConnectionState) 
     }
 }
 
-async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code: &str) -> () {
+async fn handle_connect(state: &Arc<AppState>, connection: ConnectionState, code: &str) {
     // Find pending channel by display code
     let channel_id_opt = {
         let pending_channels = state.pending_channels.read().await;
