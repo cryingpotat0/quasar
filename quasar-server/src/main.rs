@@ -399,7 +399,7 @@ async fn cleanup_connection(state: &Arc<AppState>, channel_uuid: &Uuid) {
             // Force close the websocket
             let _ = init
                 .sender
-                .send(Err(warp::Error::from("Connection closed")));
+                .send(Err(anyhow::anyhow!("Connection closed")));
         }
         if let Some(resp) = &channel.responder {
             if let Err(e) = send_message(&resp.sender, &msg) {
@@ -408,7 +408,7 @@ async fn cleanup_connection(state: &Arc<AppState>, channel_uuid: &Uuid) {
             // Force close the websocket
             let _ = resp
                 .sender
-                .send(Err(warp::Error::from("Connection closed")));
+                .send(Err(anyhow::anyhow!("Connection closed")));
         }
     }
 }
