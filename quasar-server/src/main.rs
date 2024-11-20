@@ -4,7 +4,6 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
-use serde_json;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -249,11 +248,18 @@ async fn handle_message(
     match client_msg {
         ClientMessage::Data { content } => {
             let mut connections = state.connections.read().await;
-            let current_conn = connections.get(channel_code).ok_or("Connection not found")?;
-            
+            let current_conn = connections
+                .get(channel_code)
+                .ok_or("Connection not found")?;
+
             // Check if both sides are ready
             if !current_conn.ready {
-                send_error_and_close_all(&connections, channel_code, "Data sent before connection ready").await;
+                send_error_and_close_all(
+                    &connections,
+                    channel_code,
+                    "Data sent before connection ready",
+                )
+                .await;
                 return Ok(());
             }
 
@@ -342,7 +348,7 @@ async fn cleanup_connection(state: &Arc<AppState>, channel_code: &str) {
 async fn reap_stale_connections(state: &Arc<AppState>) {
     let mut to_remove = Vec::new();
     let connections = state.connections.read().await;
-    
+
     for (code, conn) in connections.iter() {
         if conn.last_message.elapsed() > Duration::from_secs(60) {
             to_remove.push(code.clone());
