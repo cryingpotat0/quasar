@@ -59,7 +59,7 @@ struct ConnectionState {
 }
 
 impl ConnectionState {
-    fn new(sender: mpsc::UnboundedSender<Result<Message, anyhow::Error>>) -> Self {
+    fn new(sender: mpsc::UnboundedSender<Result<Message, warp::Error>>) -> Self {
         Self {
             sender,
             last_message: std::time::Instant::now(),
@@ -143,10 +143,13 @@ fn with_state(
 
 async fn handle_websocket(ws: WebSocket, state: Arc<AppState>) {
     let (ws_sender, mut ws_receiver) = ws.split();
-    let (sender, receiver) = mpsc::unbounded_channel::<Result<Message, anyhow::Error>>();
+    let (sender, receiver) = mpsc::unbounded_channel::<Result<Message, warp::Error>>();
     let receiver = tokio_stream::wrappers::UnboundedReceiverStream::new(receiver);
 
-    tokio::task::spawn(receiver.forward(ws_sender).then(|result| async move {
+    tokio::task::spawn(async move {
+        if let Err(e) = receiver.forward(ws_sender).await {
+            error!("Error sending websocket message: {}", e);
+        }
         if let Err(e) = result {
             error!("Error sending websocket message: {}", e);
         }
@@ -398,7 +401,7 @@ async fn cleanup_connection(state: &Arc<AppState>, channel_uuid: &Uuid) {
             // Force close the websocket
             let _ = init
                 .sender
-                .send(Err(anyhow::anyhow!("Connection closed")));
+                .send(Err(warp::Error::closed()));
         }
         if let Some(resp) = &channel.responder {
             if let Err(e) = send_message(&resp.sender, &msg) {
@@ -407,7 +410,7 @@ async fn cleanup_connection(state: &Arc<AppState>, channel_uuid: &Uuid) {
             // Force close the websocket
             let _ = resp
                 .sender
-                .send(Err(anyhow::anyhow!("Connection closed")));
+                .send(Err(warp::Error::closed()));
         }
     }
 }
