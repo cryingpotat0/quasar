@@ -118,6 +118,8 @@ impl QuasarServer {
                     Ok(msg) => match serde_json::from_slice::<IncomingMessage>(&msg.as_bytes()) {
                         Ok(control_msg) => match control_msg {
                             IncomingMessage::GenerateCode => {
+                                info!("Generating code");
+
                                 let code = channel_manager
                                     .lock()
                                     .unwrap()

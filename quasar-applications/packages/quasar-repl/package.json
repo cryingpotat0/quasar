@@ -1,7 +1,7 @@
 {
-  "name": "@quasar/client",
+  "name": "@quasar/repl",
   "version": "0.0.0-development",
-  "description": "Quasar client packages",
+  "description": "Quasar repl",
   "author": "Raghav Anand <hi@cryingpotato.com>",
   "license": "MIT",
   "keywords": [ ],
@@ -13,7 +13,7 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=16",
+    "node": ">=18",
     "pnpm": ">=7.5.1"
   },
   "main": "dist/index.js",
@@ -21,7 +21,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "clean:build": "rimraf ./dist",
-    "dev": "nodemon",
+    "dev": "node -r ts-node/register src/index.ts",
     "lint": "eslint . --ext .js,.ts",
     "lint:fix": "pnpm lint --fix",
     "format": "prettier --check .",
@@ -30,13 +30,15 @@
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@sinclair/typebox": "^0.34.8",
+    "@quasar/client": "workspace:*",
     "winston": "^3.17.0",
-    "ws": "^8.13.0"
+    "yargs": "^17.7.2"
   },
   "devDependencies": {
     "@types/node": "^18.15.11",
     "@types/ws": "^8.5.4",
+    "@types/yargs": "^17.0.33",
+    "ts-node": "^10.9.2",
     "typescript": "^5.0.4"
   }
 }

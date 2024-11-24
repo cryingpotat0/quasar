@@ -1,7 +1,4 @@
 {
-  "files": [],
-  "references": [
-    { "path": "packages/quasar-client" },
-    { "path": "packages/quasar-chat" }
-  ]
+  "extends": "./tsconfig.base.json",
+  "include": ["**/*", ".*.js"]
 }
