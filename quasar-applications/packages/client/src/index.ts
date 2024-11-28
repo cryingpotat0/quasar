@@ -65,6 +65,8 @@ export class QuasarClient {
     private generateCodePromise: PromiseWrapper<string> | null = null;
     private connectedPromise: PromiseWrapper<void>;
     private disconnectPromise: PromiseWrapper<void> | null = null;
+    private id: string | null = null;
+    private channelUuid: string | null = null;
 
     constructor(private options: QuasarClientOptions) {
         this.logger = winston.createLogger({
@@ -134,6 +136,16 @@ export class QuasarClient {
                 break;
             case 'data':
                 this.options.receiveData(parsedMessage.content);
+                break;
+            case 'connection_info':
+                this.id = parsedMessage.id;
+                this.channelUuid = parsedMessage.channel_uuid;
+                break;
+            case 'client_connected':
+                this.logger.debug(`Client connected: ${parsedMessage.id}`);
+                break;
+            case 'client_disconnected':
+                this.logger.debug(`Client disconnected: ${parsedMessage.id}`);
                 break;
             default:
                 // Exhaustive matching.

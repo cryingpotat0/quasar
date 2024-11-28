@@ -112,6 +112,21 @@ impl QuasarServer {
 
         async {
             info!("Client connected");
+            // First tell the client it's own ID.
+            channel
+                .send(
+                    sender_id,
+                    OutgoingMessage::ConnectionInfo {
+                        id: sender_id,
+                        channel_uuid: channel.uuid(),
+                    },
+                )
+                .await;
+
+            // Then tell everyone that the client has connected (including the client itself).
+            channel
+                .broadcast(OutgoingMessage::ClientConnected { id: sender_id })
+                .await;
 
             while let Some(result) = rx.next().await {
                 match result {
@@ -146,6 +161,9 @@ impl QuasarServer {
             }
 
             channel.remove_client(sender_id).await;
+            channel
+                .broadcast(OutgoingMessage::ClientDisconnected { id: sender_id })
+                .await;
             info!("Client removed");
             // TODO: cleanup channel.
         }

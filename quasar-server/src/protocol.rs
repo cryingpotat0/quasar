@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -14,4 +15,7 @@ pub enum IncomingMessage {
 pub enum OutgoingMessage {
     GeneratedCode { code: String },
     Data { content: String },
+    ConnectionInfo { id: usize, channel_uuid: Uuid },
+    ClientConnected { id: usize },
+    ClientDisconnected { id: usize },
 }

@@ -31,8 +31,30 @@ export const DataIncomingMessage = Type.Object({
 });
 export type DataIncomingMessage = Static<typeof DataIncomingMessage>;
 
+export const ConnectionInfoIncomingMessage = Type.Object({
+    type: Type.Literal('connection_info'),
+    id: Type.String(),
+    channel_uuid: Type.String(),
+});
+export type ConnectionInfoIncomingMessage = Static<typeof ConnectionInfoIncomingMessage>;
+
+export const ClientConnectedIncomingMessage = Type.Object({
+    type: Type.Literal('client_connected'),
+    id: Type.String(),
+});
+export type ClientConnectedIncomingMessage = Static<typeof ClientConnectedIncomingMessage>;
+
+export const ClientDisconnectedIncomingMessage = Type.Object({
+    type: Type.Literal('client_disconnected'),
+    id: Type.String(),
+});
+export type ClientDisconnectedIncomingMessage = Static<typeof ClientDisconnectedIncomingMessage>;
+
 export const IncomingMessage = Type.Union([
     GeneratedCodeIncomingMessage,
     DataIncomingMessage,
+    ConnectionInfoIncomingMessage,
+    ClientConnectedIncomingMessage,
+    ClientDisconnectedIncomingMessage,
 ]);
 export type IncomingMessage = Static<typeof IncomingMessage>;
