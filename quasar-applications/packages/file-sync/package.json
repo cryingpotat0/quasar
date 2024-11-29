@@ -1,0 +1,33 @@
+{
+  "name": "@quasar/file-sync",
+  "version": "1.0.0",
+  "description": "An example monorepo package with tsup",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "jest ",
+    "prettier": "prettier --check src/",
+    "prettier:fix": "prettier --write src/",
+    "lint": "eslint . --ext .ts,.tsx",
+    "lint:fix": "pnpm lint --fix",
+    "verify": "run-p prettier lint",
+    "verify:fix": "pnpm prettier:fix && pnpm lint:fix",
+    "build": "esbuild src/index.ts --define:process.env.NODE_ENV=\\\"production\\\" --bundle --platform=node --sourcemap --outfile=dist/index.js",
+    "postbuild": "tsc --build tsconfig.build.json"
+  },
+  "author": "Rahul Tarak",
+  "license": "MIT",
+  "dependencies": {
+    "@quasar/client": "workspace:*",
+    "winston": "^3.17.0",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@types/yargs": "^17.0.33"
+  },
+  "browser": "dist/index.js",
+  "publishConfig": {
+    "access": "public",
+    "main": "dist/index.js",
+    "typings": "dist/index.d.ts"
+  }
+}

@@ -25,6 +25,10 @@ impl Channel {
         }
     }
 
+    pub async fn client_ids(&self) -> Vec<usize> {
+        self.clients.read().await.keys().cloned().collect()
+    }
+
     pub fn uuid(&self) -> Uuid {
         self.uuid
     }

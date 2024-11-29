@@ -1,5 +1,5 @@
 use crate::channel::{Channel, ChannelManager};
-use crate::protocol::{IncomingMessage, OutgoingMessage};
+use crate::protocol::{IncomingMessage, OutgoingMessage, PROTOCOL_VERSION};
 use futures::{SinkExt, StreamExt};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -119,6 +119,8 @@ impl QuasarServer {
                     OutgoingMessage::ConnectionInfo {
                         id: sender_id,
                         channel_uuid: channel.uuid(),
+                        client_ids: channel.client_ids().await,
+                        protocol_version: PROTOCOL_VERSION,
                     },
                 )
                 .await;

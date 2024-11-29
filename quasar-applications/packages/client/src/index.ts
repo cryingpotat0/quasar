@@ -28,6 +28,13 @@ class ConnectionUrl {
 }
 
 
+interface Logger {
+    debug: (...message: any[]) => void;
+    warn: (...message: any[]) => void;
+    info: (...message: any[]) => void;
+    error: (...message: any[]) => void;
+}
+
 export interface QuasarClientOptions {
     url: string;
     connectionOptions: ConnectionOptions;
@@ -35,6 +42,7 @@ export interface QuasarClientOptions {
     onClose: () => void;
     onError: (error: Error) => void;
     receiveData: (message: string) => void;
+    logger?: Logger
 }
 
 class PromiseWrapper<T> {
@@ -61,15 +69,16 @@ class PromiseWrapper<T> {
 
 export class QuasarClient {
     private ws: WebSocket;
-    private logger: winston.Logger;
+    private logger: Logger;
     private generateCodePromise: PromiseWrapper<string> | null = null;
     private connectedPromise: PromiseWrapper<void>;
     private disconnectPromise: PromiseWrapper<void> | null = null;
-    private id: string | null = null;
-    private channelUuid: string | null = null;
+    private _id: string | null = null;
+    private _channelUuid: string | null = null;
+    private _clientIds: Set<string> = new Set();
 
     constructor(private options: QuasarClientOptions) {
-        this.logger = winston.createLogger({
+        this.logger = options.logger || winston.createLogger({
             level: options.debug ? 'debug' : 'info',
             format: winston.format.simple(),
             transports: [new winston.transports.Console()],
@@ -87,6 +96,27 @@ export class QuasarClient {
         this.ws.on('message', this.handleMessage.bind(this));
     }
 
+    public get id(): string {
+        if (!this._id) {
+            throw new Error('Client is not connected');
+        }
+        return this._id;
+    }
+
+    public get channelUuid(): string {
+        if (!this._channelUuid) {
+            throw new Error('Client is not connected');
+        }
+        return this._channelUuid;
+    }
+
+    public get clientIds(): Set<string> {
+        if (!this._clientIds.size) {
+            throw new Error('Client is not connected');
+        }
+        return this._clientIds;
+    }
+
     public connect(): Promise<void> {
         // TODO: handle reconnects.
         this.logger.debug('Waiting for WebSocket connection to open');
@@ -96,7 +126,6 @@ export class QuasarClient {
 
     private handleOpen(): void {
         this.logger.debug('Connected to Quasar server');
-        this.connectedPromise.resolve();
     }
 
     private handleClose(): void {
@@ -108,6 +137,7 @@ export class QuasarClient {
         this.logger.error('WebSocket error:', error);
         this.options.onError?.(error);
     }
+
 
     private handleMessage(data: WebSocket.Data): void {
         const message = data.toString();
@@ -138,14 +168,21 @@ export class QuasarClient {
                 this.options.receiveData(parsedMessage.content);
                 break;
             case 'connection_info':
-                this.id = parsedMessage.id;
-                this.channelUuid = parsedMessage.channel_uuid;
+                if (parsedMessage.protocol_version !== protocol.PROTOCOL_VERSION) {
+                    throw new Error(`Unsupported protocol version: ${parsedMessage.protocol_version}`);
+            }
+                this._id = parsedMessage.id;
+                this._channelUuid = parsedMessage.channel_uuid;
+                this._clientIds = new Set(parsedMessage.client_ids);
+                this.connectedPromise.resolve();
                 break;
             case 'client_connected':
                 this.logger.debug(`Client connected: ${parsedMessage.id}`);
+                this._clientIds.add(parsedMessage.id);
                 break;
             case 'client_disconnected':
                 this.logger.debug(`Client disconnected: ${parsedMessage.id}`);
+                this._clientIds.delete(parsedMessage.id);
                 break;
             default:
                 // Exhaustive matching.

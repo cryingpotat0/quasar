@@ -4,6 +4,7 @@ import { QuasarClient, ConnectionOptions } from '@quasar/client';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import repl from 'node:repl';
+import winston from 'winston';
 
 const argv = yargs(hideBin(process.argv))
   .option('url', {
@@ -26,13 +27,20 @@ const connectionOptions: ConnectionOptions = argv.code
   ? { connectionType: 'code', code: argv.code }
   : { connectionType: 'new_channel' };
 
+const logger = winston.createLogger({
+    level: argv.debug ? 'debug' : 'info',
+    format: winston.format.simple(),
+    transports: [new winston.transports.Console()],
+});
+
 const client = new QuasarClient({
   url: argv.url,
   connectionOptions: connectionOptions,
   debug: argv.debug,
   onClose: () => console.log('Disconnected from QuasarClient'),
   onError: (error) => console.error('Error:', error),
-  receiveData: (message: string) => console.log('Received:', message)
+  receiveData: (message: string) => console.log('Received:', message),
+  logger: logger
 });
 
 console.log('Connecting to QuasarClient...');

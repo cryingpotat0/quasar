@@ -1,5 +1,7 @@
 import { Type, type Static } from '@sinclair/typebox'
 
+export const PROTOCOL_VERSION = 1;
+
 // Outgoing messages
 export const GenerateCodeOutgoingMessage = Type.Object({
     type: Type.Literal('generate_code'),
@@ -35,6 +37,8 @@ export const ConnectionInfoIncomingMessage = Type.Object({
     type: Type.Literal('connection_info'),
     id: Type.String(),
     channel_uuid: Type.String(),
+    client_ids: Type.Array(Type.String()),
+    protocol_version: Type.Number(),
 });
 export type ConnectionInfoIncomingMessage = Static<typeof ConnectionInfoIncomingMessage>;
 

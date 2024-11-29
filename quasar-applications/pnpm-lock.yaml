@@ -111,20 +111,37 @@ importers:
         specifier: ^8.13.0
         version: 8.18.0
 
-  packages/repl:
+  packages/file-sync:
     dependencies:
       '@quasar/client':
         specifier: workspace:*
         version: link:../client
-      '@types/yargs':
-        specifier: ^17.0.33
-        version: 17.0.33
       winston:
         specifier: ^3.17.0
         version: 3.17.0
       yargs:
         specifier: ^17.7.2
         version: 17.7.2
+    devDependencies:
+      '@types/yargs':
+        specifier: ^17.0.33
+        version: 17.0.33
+
+  packages/repl:
+    dependencies:
+      '@quasar/client':
+        specifier: workspace:*
+        version: link:../client
+      winston:
+        specifier: ^3.17.0
+        version: 3.17.0
+      yargs:
+        specifier: ^17.7.2
+        version: 17.7.2
+    devDependencies:
+      '@types/yargs':
+        specifier: ^17.0.33
+        version: 17.0.33
 
 packages:
 
