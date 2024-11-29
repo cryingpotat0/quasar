@@ -1,8 +1,15 @@
 {
   "name": "@quasar/repl",
   "version": "1.0.0",
-  "description": "An example monorepo package with tsup",
+  "description": "A repl for quasar.cryingpotato.com",
   "main": "src/index.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cryingpotat0/quasar.git"
+  },
+  "bin": {
+     "quasar-repl": "dist/index.js"
+  },
   "scripts": {
     "test": "jest ",
     "prettier": "prettier --check src/",
@@ -14,7 +21,7 @@
     "build": "esbuild src/index.ts --define:process.env.NODE_ENV=\\\"production\\\" --bundle --platform=node --sourcemap --outfile=dist/index.js",
     "postbuild": "tsc --build tsconfig.build.json"
   },
-  "author": "Rahul Tarak",
+  "author": "Raghav Anand",
   "license": "MIT",
   "dependencies": {
     "@quasar/client": "workspace:*",
