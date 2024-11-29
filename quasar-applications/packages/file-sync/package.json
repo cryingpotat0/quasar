@@ -11,13 +11,15 @@
     "lint:fix": "pnpm lint --fix",
     "verify": "run-p prettier lint",
     "verify:fix": "pnpm prettier:fix && pnpm lint:fix",
-    "build": "esbuild src/index.ts --define:process.env.NODE_ENV=\\\"production\\\" --bundle --platform=node --sourcemap --outfile=dist/index.js",
+    "build": "node esbuild.config.js",
     "postbuild": "tsc --build tsconfig.build.json"
   },
   "author": "Rahul Tarak",
   "license": "MIT",
   "dependencies": {
     "@quasar/client": "workspace:*",
+    "@sinclair/typebox": "^0.34.8",
+    "chokidar": "^3.5.3",
     "winston": "^3.17.0",
     "yargs": "^17.7.2"
   },
