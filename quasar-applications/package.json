@@ -1,7 +1,7 @@
 {
-  "name": "quasar",
+  "name": "quasartc",
   "version": "1.0.0",
-  "description": "An example typescript monorepo",
+  "description": "quasar.cryingpotato.com",
   "scripts": {
     "prepublish": "pnpm build",
     "verify": "pnpm -r  --stream run verify",
@@ -9,9 +9,9 @@
     "build": "pnpm -r run build",
     "test": "NODE_ENV=development pnpm -r --stream run test"
   },
-  "author": "@jfbloom22",
+  "author": "@cryingpotat0",
   "license": "ISC",
-  "private": true,
+  "private": false,
   "husky": {
     "hooks": {
       "pre-commit": "pnpm prettier",

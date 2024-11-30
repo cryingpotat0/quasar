@@ -1,5 +1,5 @@
 {
-  "name": "@quasar/repl",
+  "name": "@quasartc/repl",
   "version": "1.0.0",
   "description": "A repl for quasar.cryingpotato.com",
   "main": "src/index.ts",

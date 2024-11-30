@@ -1,8 +1,12 @@
 {
-  "name": "@quasar/file-sync",
+  "name": "@quasartc/file-sync",
   "version": "1.0.0",
   "description": "An example monorepo package with tsup",
   "main": "src/index.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cryingpotat0/quasar.git"
+  },
   "scripts": {
     "test": "jest ",
     "prettier": "prettier --check src/",
@@ -14,7 +18,7 @@
     "build": "node esbuild.config.js",
     "postbuild": "tsc --build tsconfig.build.json"
   },
-  "author": "Rahul Tarak",
+  "author": "Raghav Anand",
   "license": "MIT",
   "dependencies": {
     "@quasar/client": "workspace:*",
