@@ -1,6 +1,6 @@
 {
   "name": "@quasartc/file-sync",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "An example monorepo package with tsup",
   "main": "src/index.ts",
   "bin": {
@@ -18,7 +18,8 @@
     "lint:fix": "pnpm lint --fix",
     "verify": "run-p prettier lint",
     "verify:fix": "pnpm prettier:fix && pnpm lint:fix",
-    "build": "node esbuild.config.js"
+    "build": "node esbuild.config.js",
+    "prepublishOnly": "pnpm run build"
   },
   "author": "Raghav Anand",
   "license": "MIT",
