@@ -1,8 +1,11 @@
 {
   "name": "@quasartc/file-sync",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "An example monorepo package with tsup",
   "main": "src/index.ts",
+  "bin": {
+     "quasar-file-sync": "dist/index.js"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cryingpotat0/quasar.git"
