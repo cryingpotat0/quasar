@@ -15,11 +15,15 @@ class ConnectionUrl {
     constructor(private _url: string, private connectionOptions: ConnectionOptions) {}
 
     get url(): string {
+        let url = this._url;
+        if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
+            url = `wss://${url}`;
+        }
         switch (this.connectionOptions.connectionType) {
             case 'new_channel':
-                return `ws://${this._url}/ws/new`;
+                return `${url}/ws/new`;
             case 'code':
-                return `ws://${this._url}/ws/connect?code=${this.connectionOptions.code}`;
+                return `${url}/ws/connect?code=${this.connectionOptions.code}`;
             default:
                 let _: never = this.connectionOptions;
                 throw new Error('Unreachable');

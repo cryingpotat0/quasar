@@ -1,6 +1,6 @@
 {
   "name": "@quasartc/client",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "An example monorepo package with testing/esbuild",
   "main": "src/index.ts",
   "repository": {
