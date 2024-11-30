@@ -18,8 +18,7 @@
     "lint:fix": "pnpm lint --fix",
     "verify": "run-p prettier lint",
     "verify:fix": "pnpm prettier:fix && pnpm lint:fix",
-    "build": "esbuild src/index.ts --define:process.env.NODE_ENV=\\\"production\\\" --bundle --platform=node --sourcemap --outfile=dist/index.js",
-    "postbuild": "tsc --build tsconfig.build.json"
+    "build": "esbuild src/index.ts --define:process.env.NODE_ENV=\\\"production\\\" --bundle --platform=node --sourcemap --outfile=dist/index.js"
   },
   "author": "Raghav Anand",
   "license": "MIT",
