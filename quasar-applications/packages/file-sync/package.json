@@ -4,7 +4,7 @@
   "description": "An example monorepo package with tsup",
   "main": "src/index.ts",
   "bin": {
-     "quasar-file-sync": "dist/index.js"
+    "quasar-file-sync": "dist/index.js"
   },
   "repository": {
     "type": "git",
@@ -24,13 +24,15 @@
   "author": "Raghav Anand",
   "license": "MIT",
   "dependencies": {
-    "@quasar/client": "workspace:*",
+    "@quasartc/client": "workspace:*",
     "@sinclair/typebox": "^0.34.8",
     "chokidar": "^3.5.3",
+    "md5": "^2.3.0",
     "winston": "^3.17.0",
     "yargs": "^17.7.2"
   },
   "devDependencies": {
+    "@types/md5": "^2.3.5",
     "@types/yargs": "^17.0.33"
   },
   "browser": "dist/index.js",

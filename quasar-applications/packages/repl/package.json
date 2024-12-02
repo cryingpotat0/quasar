@@ -24,7 +24,7 @@
   "author": "Raghav Anand",
   "license": "MIT",
   "dependencies": {
-    "@quasar/client": "workspace:*",
+    "@quasartc/client": "workspace:*",
     "winston": "^3.17.0",
     "yargs": "^17.7.2"
   },
