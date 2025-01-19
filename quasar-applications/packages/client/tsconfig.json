@@ -5,5 +5,5 @@
     "emitDeclarationOnly": true
   },
   "include": ["./src","__tests__/**/**.ts"],
-  "references": [{ "path": "../interfaces/tsconfig.json" }]
+  "references": []
 }

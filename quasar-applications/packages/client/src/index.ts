@@ -1,8 +1,30 @@
-import WebSocket from 'ws';
-import winston from 'winston';
+// Conditionally import winston only in Node environment
+let winston: any;
+if (typeof window === 'undefined') {
+    // Dynamic import for Node environment only
+    const winstonModule = require('winston');
+    winston = winstonModule.default;
+}
 import { Value } from '@sinclair/typebox/value';
 import * as protocol from './protocol';
+import { Buffer as BufferPolyfill } from 'buffer';
+const BufferImpl = typeof Buffer !== 'undefined' ? Buffer : BufferPolyfill;
 export * as protocol from './protocol';
+
+// Conditionally import ws only in Node environment
+let NodeWebSocket: typeof WebSocket | null = null;
+if (typeof window === 'undefined') {
+    try {
+        // Use require for Node environment
+        const ws = require('ws');
+        NodeWebSocket = ws.default || ws;
+    } catch (e) {
+        // ws not available
+    }
+}
+
+// Use native WebSocket for browser, Node WebSocket for Node
+const WebSocketImpl = typeof window !== 'undefined' ? WebSocket : NodeWebSocket;
 
 export type ConnectionOptions = {
     connectionType: 'new_channel' 
@@ -70,6 +92,13 @@ class PromiseWrapper<T> {
     }
 }
 
+// Create a minimal logger interface for browsers
+const createBrowserLogger = (debug: boolean): Logger => ({
+    debug: debug ? console.debug.bind(console) : () => {},
+    info: console.info.bind(console),
+    warn: console.warn.bind(console),
+    error: console.error.bind(console)
+});
 
 export class QuasarClient {
     private ws: WebSocket;
@@ -82,22 +111,48 @@ export class QuasarClient {
     private _clientIds: Set<string> = new Set();
 
     constructor(private options: QuasarClientOptions) {
-        this.logger = options.logger || winston.createLogger({
-            level: options.debug ? 'debug' : 'info',
-            format: winston.format.simple(),
-            transports: [new winston.transports.Console()],
-        });
+        // Use browser-compatible logger when in browser environment
+        if (typeof window !== 'undefined') {
+            this.logger = options.logger || createBrowserLogger(!!options.debug);
+        } else if (winston) {
+            this.logger = options.logger || winston.createLogger({
+                level: options.debug ? 'debug' : 'info',
+                format: winston.format.simple(),
+                transports: [new winston.transports.Console()],
+            });
+        } else {
+            // Fallback logger if neither winston nor window is available
+            this.logger = createBrowserLogger(!!options.debug);
+        }
 
         const url = new ConnectionUrl(options.url, options.connectionOptions).url;
-
         this.logger.debug(`Attempting to connect to WebSocket at ${url}`);
-        this.ws = new WebSocket(url);
+
+        if (!WebSocketImpl) {
+            throw new Error('WebSocket implementation not available');
+        }
+
+        this.ws = new WebSocketImpl(url);
         this.connectedPromise = new PromiseWrapper();
 
-        this.ws.on('open', this.handleOpen.bind(this));
-        this.ws.on('close', this.handleClose.bind(this));
-        this.ws.on('error', this.handleError.bind(this));
-        this.ws.on('message', this.handleMessage.bind(this));
+        // Bind event listeners
+        if (typeof window !== 'undefined') {
+            // Browser WebSocket
+            this.ws.onopen = this.handleOpen.bind(this);
+            this.ws.onclose = this.handleClose.bind(this);
+            this.ws.onerror = (event: Event) => this.handleError(event as any);
+            this.ws.onmessage = (event: MessageEvent) => this.handleMessage(event.data);
+        } else {
+            // Node WebSocket
+            // @ts-ignore
+            this.ws.on('open', this.handleOpen.bind(this));
+            // @ts-ignore
+            this.ws.on('close', this.handleClose.bind(this));
+            // @ts-ignore
+            this.ws.on('error', this.handleError.bind(this));
+            // @ts-ignore
+            this.ws.on('message', this.handleMessage.bind(this));
+        }
     }
 
     public get id(): string {
@@ -143,8 +198,8 @@ export class QuasarClient {
     }
 
 
-    private handleMessage(data: WebSocket.Data): void {
-        const message = data.toString();
+    private handleMessage(data: any): void {
+        const message = data instanceof BufferImpl ? data.toString() : data.toString();
         this.logger.debug(`Received message: ${message}`);
         // TODO: value.decode is not working with union types??
         let parsedMessage: protocol.IncomingMessage = JSON.parse(message);
