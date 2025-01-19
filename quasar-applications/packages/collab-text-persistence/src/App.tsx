@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import './App.css'
-import { QuasarClient, ConnectionOptions } from '@quasartc/client'
+import { QuasarClient } from '@quasartc/client'
 
 function App() {
   const [count, setCount] = useState({
       count: 0,
       sequenceNumber: 0,
   })
-  const [client, setClient] = useState<QuasarClient | null>(null);
+  const [_client, setClient] = useState<QuasarClient | null>(null);
   const [messages, setMessages] = useState<string[]>([]);
   useEffect(() => {
       const client = new QuasarClient({
@@ -45,7 +45,7 @@ function App() {
             } catch (e) {
                 console.error('Closing client')
             } finally {
-                client.close();
+                client.disconnect();
                 setClient(null);
             }
         };

@@ -6,7 +6,7 @@
   "main": "dist/node/index.js",
   "module": "dist/browser/index.js",
   "browser": "dist/browser/index.js",
-  "types": "dist/types/index.d.ts",
+  "types": "dist/types/src/index.d.ts",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cryingpotat0/quasar.git"
@@ -46,7 +46,7 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/types/index.d.ts",
+      "types": "./dist/types/src/index.d.ts",
       "browser": "./dist/browser/index.js",
       "node": "./dist/node/index.js",
       "default": "./dist/node/index.js"
