@@ -7,6 +7,7 @@ mod code_generator;
 mod error;
 mod protocol;
 mod server;
+mod storage;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
