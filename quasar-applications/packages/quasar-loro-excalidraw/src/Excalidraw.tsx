@@ -102,8 +102,7 @@ function App({ client }: { client: QuasarClient }) {
       try {
         doc.import(bytes);
       } catch (e) {
-        localStorage.clear();
-        location.reload();
+        console.log('error importing', e);
       }
     });
     doc.subscribe((e) => {

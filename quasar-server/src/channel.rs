@@ -1,8 +1,10 @@
 use crate::code_generator::{Code, CodeError, CodeGenerator};
 use crate::protocol::OutgoingMessage;
+use crate::storage::{FileLogStorage, LogStorage};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, RwLock};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 type ClientSender = mpsc::Sender<warp::ws::Message>;
@@ -13,15 +15,23 @@ pub struct Channel {
     clients: Arc<RwLock<HashMap<usize, ClientSender>>>,
     incrementing_id: Arc<Mutex<usize>>,
     pending_connects: Arc<Mutex<HashMap<u8, Code>>>,
+    storage: Option<Arc<Mutex<FileLogStorage>>>, // TODO: trait
 }
 
 impl Channel {
     pub fn new(uuid: Uuid) -> Self {
+        let storage = FileLogStorage::new(format!("{}.log", uuid));
+        let storage = match storage {
+            Ok(storage) => Some(Arc::new(Mutex::new(storage))),
+            Err(_) => panic!("Failed to create storage"),
+        };
         Self {
             uuid,
             clients: Arc::new(RwLock::new(HashMap::new())),
             incrementing_id: Arc::new(Mutex::new(0)),
             pending_connects: Arc::new(Mutex::new(HashMap::new())),
+            // TODO: add configuration for kind of storage.
+            storage,
         }
     }
 
@@ -62,6 +72,25 @@ impl Channel {
         let clients = self.clients.read().await;
         let client = clients.get(&sender_id).unwrap();
         let _ = client.send(warp::ws::Message::text(msg)).await;
+    }
+
+    pub async fn append_log(&self, data: String) {
+        if self.storage.is_none() {
+            return;
+        }
+        debug!("Appending log");
+        let storage = self.storage.as_ref().unwrap();
+        let mut storage = storage.lock().unwrap();
+        storage.append_or_create(data).unwrap();
+    }
+
+    pub async fn get_log(&self) -> Option<Vec<String>> {
+        if self.storage.is_none() {
+            return None;
+        }
+        let storage = self.storage.as_ref().unwrap();
+        let mut storage = storage.lock().unwrap();
+        Some(storage.get().unwrap())
     }
 }
 

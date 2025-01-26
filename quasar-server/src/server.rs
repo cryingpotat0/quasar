@@ -134,6 +134,16 @@ impl QuasarServer {
                 )
                 .await;
 
+            let messages = channel.get_log().await;
+            if let Some(messages) = messages {
+                info!("Sending {:?} initial messages", messages.len());
+                for msg in messages {
+                    channel
+                        .send(sender_id, OutgoingMessage::Data { content: msg })
+                        .await;
+                }
+            }
+
             // Then tell everyone that the client has connected (including the client itself).
             channel
                 .broadcast(OutgoingMessage::ClientConnected { id: sender_id })
@@ -141,7 +151,7 @@ impl QuasarServer {
 
             while let Some(result) = rx.next().await {
                 match result {
-                    Ok(msg) => match serde_json::from_slice::<IncomingMessage>(&msg.as_bytes()) {
+                    Ok(msg) => match serde_json::from_slice::<IncomingMessage>(msg.as_bytes()) {
                         Ok(control_msg) => match control_msg {
                             IncomingMessage::GenerateCode => {
                                 info!("Generating code");
@@ -157,6 +167,7 @@ impl QuasarServer {
                                 channel.send(sender_id, response).await;
                             }
                             IncomingMessage::Data { content } => {
+                                channel.append_log(content.clone()).await;
                                 channel.broadcast(OutgoingMessage::Data { content }).await;
                             }
                         },

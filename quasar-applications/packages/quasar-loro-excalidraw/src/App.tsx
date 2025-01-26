@@ -22,7 +22,6 @@ export default function App() {
                 },
                 onClose: () => console.log('Disconnected from QuasarClient'),
                 onError: (error: any) => setError(error.message),
-                receiveData: (message: string) => console.log('Received:', message),
             });
 
             await client.connect();
@@ -50,7 +49,6 @@ export default function App() {
                 },
                 onClose: () => console.log('Disconnected from QuasarClient'),
                 onError: (error: any) => setError(error.message),
-                receiveData: (message: string) => console.log('Received:', message),
             });
 
             await client.connect();
