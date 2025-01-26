@@ -15,7 +15,7 @@ pub struct QuasarServer {
     channel_manager: Arc<Mutex<ChannelManager>>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug)]
 struct ConnectQuery {
     id: Option<Uuid>,
     code: Option<String>,
@@ -53,6 +53,8 @@ impl QuasarServer {
                 move |query: ConnectQuery,
                       ws: warp::ws::Ws,
                       channel_manager: Arc<Mutex<ChannelManager>>| {
+                    info!("Connecting with query: {:?}", query);
+
                     let channel_manager = channel_manager.clone();
                     ws.on_upgrade(move |socket| {
                         Self::handle_connect(socket, query, channel_manager)
@@ -73,8 +75,15 @@ impl QuasarServer {
         channel_manager: Arc<Mutex<ChannelManager>>,
     ) {
         if let Some(id) = query.id {
-            let channel = channel_manager.lock().unwrap().get_channel(&id).unwrap();
-            Self::handle_websocket(ws, channel, channel_manager).await;
+            let channel = channel_manager.lock().unwrap().get_channel(&id);
+            match channel {
+                Some(channel) => {
+                    Self::handle_websocket(ws, channel, channel_manager).await;
+                }
+                None => {
+                    error!("Invalid ID");
+                }
+            }
         } else if let Some(code) = query.code {
             // TODO: move code parsing up the stack, and better error handling.
             let code = code.parse().unwrap();

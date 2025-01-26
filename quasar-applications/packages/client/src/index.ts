@@ -31,6 +31,9 @@ export type ConnectionOptions = {
 } | {
     connectionType: 'code',
     code: string,
+} | {
+    connectionType: 'channel_uuid',
+    channelUuid: string,
 }
 
 class ConnectionUrl {
@@ -46,6 +49,8 @@ class ConnectionUrl {
                 return `${url}/ws/new`;
             case 'code':
                 return `${url}/ws/connect?code=${this.connectionOptions.code}`;
+            case 'channel_uuid':
+                return `${url}/ws/connect?id=${this.connectionOptions.channelUuid}`;
             default:
                 let _: never = this.connectionOptions;
                 throw new Error('Unreachable');
@@ -67,7 +72,7 @@ export interface QuasarClientOptions {
     debug?: boolean;
     onClose: () => void;
     onError: (error: Error) => void;
-    receiveData: (message: string) => void;
+    receiveData?: (message: string) => void;
     logger?: Logger
 }
 
@@ -109,6 +114,7 @@ export class QuasarClient {
     private _id: string | null = null;
     private _channelUuid: string | null = null;
     private _clientIds: Set<string> = new Set();
+    private _messageBuffer: string[] = [];
 
     constructor(private options: QuasarClientOptions) {
         // Use browser-compatible logger when in browser environment
@@ -197,6 +203,21 @@ export class QuasarClient {
         this.options.onError?.(error);
     }
 
+    private handleData(data: string): void {
+        if (!this.options.receiveData) {
+            this._messageBuffer.push(data);
+        } else {
+            this.options.receiveData(data)
+        }
+    }
+
+    public onMessage(callback: (message: string) => void): void {
+        for (const message of this._messageBuffer) {
+            callback(message);
+        }
+        this.options.receiveData = callback;
+    }
+
 
     private handleMessage(data: any): void {
         const message = data instanceof BufferImpl ? data.toString() : data.toString();
@@ -224,7 +245,7 @@ export class QuasarClient {
                 this.generateCodePromise = null;
                 break;
             case 'data':
-                this.options.receiveData(parsedMessage.content);
+                this.handleData(parsedMessage.content);
                 break;
             case 'connection_info':
                 if (parsedMessage.protocol_version !== protocol.PROTOCOL_VERSION) {
